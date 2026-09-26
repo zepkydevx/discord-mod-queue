@@ -148,12 +148,7 @@ func TestStopWaitsForInFlightJobsToFinish(t *testing.T) {
 	q.Start(ctx)
 
 	var finished int32
-	job := &blockingJob{duration: 30 * time.Millisecond, done: new(sync.WaitGroup)}
-	job.done.Add(1)
-	go func() {
-		job.done.Wait()
-		atomic.StoreInt32(&finished, 1)
-	}()
+	job := &finishFlagJob{duration: 30 * time.Millisecond, finished: &finished}
 
 	q.Enqueue(job)
 	q.Stop() // should block until the job above actually finishes
@@ -161,6 +156,19 @@ func TestStopWaitsForInFlightJobsToFinish(t *testing.T) {
 	if atomic.LoadInt32(&finished) != 1 {
 		t.Fatal("expected the in-flight job to have finished before Stop returned")
 	}
+}
+
+type finishFlagJob struct {
+	duration time.Duration
+	finished *int32
+}
+
+func (j *finishFlagJob) Describe() string { return "finish-flag" }
+
+func (j *finishFlagJob) Execute(ctx context.Context) error {
+	time.Sleep(j.duration)
+	atomic.StoreInt32(j.finished, 1)
+	return nil
 }
 
 func TestCancelledContextStopsRetries(t *testing.T) {
